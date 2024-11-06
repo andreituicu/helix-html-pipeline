@@ -11,6 +11,7 @@
  */
 /* eslint-env mocha */
 import assert from 'assert';
+import crypto from 'crypto';
 import path from 'path';
 import { readFile } from 'fs/promises';
 import { JSDOM } from 'jsdom';
@@ -193,7 +194,6 @@ describe('Rendering', () => {
     }
     const response = await render(url, '', expStatus, partition);
     const actHtml = response.body;
-    console.log(actHtml);
     if (expStatus === 200) {
       const $actMain = new JSDOM(actHtml).window.document.querySelector(domSelector);
       const $expMain = new JSDOM(expHtml).window.document.querySelector(domSelector);
@@ -512,6 +512,146 @@ describe('Rendering', () => {
         },
       };
       await testRender('head-with-script', 'html');
+    });
+
+    it('renders nonce metadata', async () => {
+      const originalRandomBytes = crypto.randomBytes;
+      try {
+        crypto.randomBytes = () => Buffer.from('rAnd0mmmrAnd0mmm');
+        config = {
+          ...DEFAULT_CONFIG,
+          head: {
+            // eslint-disable-next-line quotes
+            html: `<meta http-equiv="content-security-policy" content="script-src 'nonce' 'strict-dynamic'; style-src 'nonce'; base-uri 'self'; object-src 'none';" />\n`
+              + '<script src="/scripts/aem.js" type="module"></script>\n'
+              + '<script src="/scripts/scripts.js" type="module"></script>\n'
+              + '<link rel="stylesheet" href="/styles/styles.css"/>\n'
+              + '<script> const a = 1 </script>\n'
+              + '<style id="at-body-style">body {opacity: 1}</style>',
+          },
+        };
+        const { headers } = await testRender('nonce-meta', 'html');
+        // eslint-disable-next-line quotes
+        assert.strictEqual(headers.get('content-security-policy'), `script-src 'nonce-ckFuZDBtbW1yQW5kMG1tbQ==' 'strict-dynamic'; style-src 'nonce-ckFuZDBtbW1yQW5kMG1tbQ=='; base-uri 'self'; object-src 'none';`);
+      } finally {
+        crypto.randomBytes = originalRandomBytes;
+      }
+    });
+
+    it('renders nonce headers', async () => {
+      const originalRandomBytes = crypto.randomBytes;
+      try {
+        crypto.randomBytes = () => Buffer.from('rAnd0mmmrAnd0mmm');
+        config = {
+          ...DEFAULT_CONFIG,
+          headers: {
+            '/**': [
+              {
+                key: 'content-security-policy',
+                // eslint-disable-next-line quotes
+                value: `script-src 'nonce' 'strict-dynamic'; style-src 'nonce'; base-uri 'self'; object-src 'none';`,
+              },
+            ],
+          },
+          head: {
+            html: '<script src="/scripts/aem.js" type="module"></script>\n'
+              + '<script src="/scripts/scripts.js" type="module"></script>\n'
+              + '<link rel="stylesheet" href="/styles/styles.css"/>\n'
+              + '<script> const a = 1 </script>\n'
+              + '<style id="at-body-style">body {opacity: 1}</style>',
+          },
+        };
+        const { headers } = await testRender('nonce-headers', 'html');
+        // eslint-disable-next-line quotes
+        assert.strictEqual(headers.get('content-security-policy'), `script-src 'nonce-ckFuZDBtbW1yQW5kMG1tbQ==' 'strict-dynamic'; style-src 'nonce-ckFuZDBtbW1yQW5kMG1tbQ=='; base-uri 'self'; object-src 'none';`);
+      } finally {
+        crypto.randomBytes = originalRandomBytes;
+      }
+    });
+
+    it('renders nonce headers and meta', async () => {
+      const originalRandomBytes = crypto.randomBytes;
+      try {
+        crypto.randomBytes = () => Buffer.from('rAnd0mmmrAnd0mmm');
+        config = {
+          ...DEFAULT_CONFIG,
+          headers: {
+            '/**': [
+              {
+                key: 'content-security-policy',
+                value: 'frame-ancestors \'self\'',
+              },
+            ],
+          },
+          head: {
+            // eslint-disable-next-line quotes
+            html: `<meta http-equiv="content-security-policy" content="script-src 'nonce' 'strict-dynamic'; style-src 'nonce'; base-uri 'self'; object-src 'none';">\n`
+              + '<script src="/scripts/aem.js" type="module"></script>\n'
+              + '<script src="/scripts/scripts.js" type="module"></script>\n'
+              + '<link rel="stylesheet" href="/styles/styles.css"/>\n'
+              + '<script> const a = 1 </script>\n'
+              + '<style id="at-body-style">body {opacity: 1}</style>',
+          },
+        };
+        const { headers } = await testRender('nonce-headers-meta', 'html');
+        assert.strictEqual(headers.get('content-security-policy'), 'frame-ancestors \'self\'');
+      } finally {
+        crypto.randomBytes = originalRandomBytes;
+      }
+    });
+
+    it('renders nonce meta kept as meta', async () => {
+      const originalRandomBytes = crypto.randomBytes;
+      try {
+        crypto.randomBytes = () => Buffer.from('rAnd0mmmrAnd0mmm');
+        config = {
+          ...DEFAULT_CONFIG,
+          head: {
+            // eslint-disable-next-line quotes
+            html: `<meta http-equiv="content-security-policy" content="script-src 'nonce' 'strict-dynamic'; style-src 'nonce'; base-uri 'self'; object-src 'none';" keep-as-meta="true">\n`
+              + '<script src="/scripts/aem.js" type="module"></script>\n'
+              + '<script src="/scripts/scripts.js" type="module"></script>\n'
+              + '<link rel="stylesheet" href="/styles/styles.css"/>\n'
+              + '<script> const a = 1 </script>\n'
+              + '<style id="at-body-style">body {opacity: 1}</style>',
+          },
+        };
+        const { headers } = await testRender('nonce-headers-meta', 'html');
+        assert.ok(!headers.get('content-security-policy'));
+      } finally {
+        crypto.randomBytes = originalRandomBytes;
+      }
+    });
+
+    it('renders nonce script only', async () => {
+      const originalRandomBytes = crypto.randomBytes;
+      try {
+        crypto.randomBytes = () => Buffer.from('rAnd0mmmrAnd0mmm');
+        config = {
+          ...DEFAULT_CONFIG,
+          headers: {
+            '/**': [
+              {
+                key: 'content-security-policy',
+                // eslint-disable-next-line quotes
+                value: `script-src 'nonce' 'strict-dynamic'; base-uri 'self'; object-src 'none';`,
+              },
+            ],
+          },
+          head: {
+            html: '<script src="/scripts/aem.js" type="module"></script>\n'
+              + '<script src="/scripts/scripts.js" type="module"></script>\n'
+              + '<link rel="stylesheet" href="/styles/styles.css"/>\n'
+              + '<script> const a = 1 </script>\n'
+              + '<style id="at-body-style">body {opacity: 1}</style>',
+          },
+        };
+        const { headers } = await testRender('nonce-script-only', 'html');
+        // eslint-disable-next-line quotes
+        assert.strictEqual(headers.get('content-security-policy'), `script-src 'nonce-ckFuZDBtbW1yQW5kMG1tbQ==' 'strict-dynamic'; base-uri 'self'; object-src 'none';`);
+      } finally {
+        crypto.randomBytes = originalRandomBytes;
+      }
     });
 
     it('renders 404 if content not found', async () => {

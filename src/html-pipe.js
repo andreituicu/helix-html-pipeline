@@ -147,6 +147,7 @@ export async function htmlPipe(state, req) {
 
     if (state.content.sourceBus === 'code' || state.info.originalExtension === '.md') {
       state.timer?.update('serialize');
+      await setCustomResponseHeaders(state, req, res);
       await renderCode(state, req, res);
     } else {
       state.timer?.update('parse');
@@ -163,12 +164,12 @@ export async function htmlPipe(state, req) {
       await createPictures(state);
       await extractMetaData(state, req);
       await addHeadingIds(state);
+      await setCustomResponseHeaders(state, req, res);
       await render(state, req, res);
       state.timer?.update('serialize');
       await tohtml(state, req, res);
     }
 
-    await setCustomResponseHeaders(state, req, res);
     await setXSurrogateKeyHeader(state, req, res);
   } catch (e) {
     res.error = e.message;
