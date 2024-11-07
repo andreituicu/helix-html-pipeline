@@ -11,12 +11,11 @@
  */
 
 /* eslint-disable max-len */
-import crypto from 'crypto';
 import { h } from 'hastscript';
 import { unified } from 'unified';
 import rehypeParse from 'rehype-parse';
 import { cleanupHeaderValue } from '@adobe/helix-shared-utils';
-import { remove } from 'unist-util-remove';
+import { contentSecurityPolicy } from './csp.js';
 
 function appendElement($parent, $el) {
   if ($el) {
@@ -40,79 +39,6 @@ function createElement(name, ...attrs) {
 function sanitizeJsonLd(jsonLd) {
   const sanitizedJsonLd = jsonLd.replaceAll('<', '&#x3c;').replaceAll('>', '&#x3e;');
   return JSON.stringify(JSON.parse(sanitizedJsonLd.trim()));
-}
-
-function parseCSP(csp) {
-  const parts = csp.split(';');
-  const result = {};
-  parts.forEach((part) => {
-    const [directive, ...values] = part.trim().split(' ');
-    result[directive] = values.join(' ');
-  });
-  return result;
-}
-
-function createAndApplyNonce(res, head, metaCSP, headersCSP) {
-  const nonce = crypto.randomBytes(16).toString('base64');
-  let scriptNonce = false;
-  let styleNonce = false;
-
-  if (metaCSP) {
-    const parsedMetaCSP = parseCSP(metaCSP.properties.content);
-    scriptNonce ||= parsedMetaCSP['script-src']?.includes('nonce');
-    styleNonce ||= parsedMetaCSP['style-src']?.includes('nonce');
-    metaCSP.properties.content = metaCSP.properties.content.replaceAll('nonce', `nonce-${nonce}`);
-  }
-
-  if (headersCSP) {
-    const parsedHeaderCSP = parseCSP(headersCSP);
-    scriptNonce ||= parsedHeaderCSP['script-src']?.includes('nonce');
-    styleNonce ||= parsedHeaderCSP['style-src']?.includes('nonce');
-    res.headers.set('content-security-policy', headersCSP.replaceAll('nonce', `nonce-${nonce}`));
-  }
-
-  if (scriptNonce) {
-    head.children.forEach(
-      (el) => { if (el.tagName === 'script') el.properties.nonce = nonce; },
-    );
-  }
-
-  if (styleNonce) {
-    head.children.forEach(
-      (el) => { if (el.tagName === 'style' || (el.tagName === 'link' && el.properties.rel?.[0] === 'stylesheet')) el.properties.nonce = nonce; },
-    );
-  }
-}
-
-function contentSecurityPolicy(res, head) {
-  const metaCSP = head.children.find(
-    (el) => el.tagName === 'meta' && el.properties?.httpEquiv?.[0]?.toLowerCase() === 'content-security-policy',
-  );
-  const headersCSP = res.headers.get('content-security-policy');
-
-  if (!metaCSP && !headersCSP) {
-    // No CSP defined
-    return;
-  }
-
-  // CSP with nonce
-  if (
-    (metaCSP && metaCSP.properties.content.includes('nonce'))
-    || (headersCSP && headersCSP.includes('nonce'))
-  ) {
-    createAndApplyNonce(res, head, metaCSP, headersCSP);
-  }
-
-  if (metaCSP && !headersCSP) {
-    if (!metaCSP.properties['keep-as-meta']) {
-      // if we have a CSP in meta but no CSP in headers, we move the meta CSP to the headers, because it is more secure
-      res.headers.set('content-security-policy', metaCSP.properties.content);
-      remove(head, null, metaCSP);
-    } else {
-      // specifically instructed to keep as meta, so we remove the property, because it is not standard HTML
-      delete metaCSP.properties['keep-as-meta'];
-    }
-  }
 }
 
 /**

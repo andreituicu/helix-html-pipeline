@@ -221,6 +221,31 @@ describe('Rendering', () => {
     return response;
   }
 
+  async function testRenderCode(url, expStatus = 200) {
+    if (!(url instanceof URL)) {
+      // eslint-disable-next-line no-param-reassign
+      url = new URL(`https://helix-pages.com/${url}`);
+    }
+    const spec = url.pathname.split('/').pop().split('.')[0];
+    const expFile = path.resolve(__testdir, 'fixtures', 'code', `${spec}.ref.html`);
+    let expHtml = null;
+    try {
+      expHtml = await readFile(expFile, 'utf-8');
+    } catch {
+      // ignore
+    }
+
+    const response = await render(url);
+    assert.strictEqual(response.status, expStatus);
+    const actHtml = response.body;
+    if (expStatus === 200) {
+      const $actMain = new JSDOM(actHtml).window.document.querySelector('html');
+      const $expMain = new JSDOM(expHtml).window.document.querySelector('html');
+      await assertHTMLEquals($actMain.outerHTML, $expMain.outerHTML);
+    }
+    return response;
+  }
+
   describe('Section DIVS', () => {
     it('renders document with 1 section correctly', async () => {
       await testRender('one-section');
@@ -547,7 +572,7 @@ describe('Rendering', () => {
           headers: {
             '/**': [
               {
-                key: 'content-security-policy',
+                key: 'Content-Security-Policy',
                 // eslint-disable-next-line quotes
                 value: `script-src 'nonce' 'strict-dynamic'; style-src 'nonce'; base-uri 'self'; object-src 'none';`,
               },
@@ -907,6 +932,54 @@ describe('Rendering', () => {
         'x-surrogate-key': 'OhRDjcpvIRqjAeih super-test--helix-pages--adobe_code',
         link: '</scripts/scripts.js>; rel=modulepreload; as=script; crossorigin=use-credentials',
       });
+    });
+
+    it('renders static html from the codebus and applies csp from header with nonce', async () => {
+      const originalRandomBytes = crypto.randomBytes;
+      try {
+        crypto.randomBytes = () => Buffer.from('rAnd0mmmrAnd0mmm');
+        config = {
+          ...DEFAULT_CONFIG,
+          headers: {
+            '/**': [
+              {
+                key: 'content-security-policy',
+                // eslint-disable-next-line quotes
+                value: `script-src 'nonce' 'strict-dynamic'; style-src 'nonce'; base-uri 'self'; object-src 'none';`,
+              },
+            ],
+          },
+        };
+
+        const { headers } = await testRenderCode(new URL('https://helix-pipeline.com/static-nonce-header.html'));
+        // eslint-disable-next-line quotes
+        assert.strictEqual(headers.get('content-security-policy'), `script-src 'nonce-ckFuZDBtbW1yQW5kMG1tbQ==' 'strict-dynamic'; style-src 'nonce-ckFuZDBtbW1yQW5kMG1tbQ=='; base-uri 'self'; object-src 'none';`);
+      } finally {
+        crypto.randomBytes = originalRandomBytes;
+      }
+    });
+
+    it('renders static html from the codebus and applies csp from meta with nonce', async () => {
+      const originalRandomBytes = crypto.randomBytes;
+      try {
+        crypto.randomBytes = () => Buffer.from('rAnd0mmmrAnd0mmm');
+        const { headers } = await testRenderCode(new URL('https://helix-pipeline.com/static-nonce-meta.html'));
+        // eslint-disable-next-line quotes
+        assert.strictEqual(headers.get('content-security-policy'), `script-src 'nonce-ckFuZDBtbW1yQW5kMG1tbQ==' 'strict-dynamic'; style-src 'nonce-ckFuZDBtbW1yQW5kMG1tbQ=='; base-uri 'self'; object-src 'none';`);
+      } finally {
+        crypto.randomBytes = originalRandomBytes;
+      }
+    });
+
+    it('renders static html from the codebus and applies csp from meta with nonce', async () => {
+      const originalRandomBytes = crypto.randomBytes;
+      try {
+        crypto.randomBytes = () => Buffer.from('rAnd0mmmrAnd0mmm');
+        const { headers } = await testRenderCode(new URL('https://helix-pipeline.com/static-nonce-meta-keep.html'));
+        assert.ok(!headers.get('content-security-policy'));
+      } finally {
+        crypto.randomBytes = originalRandomBytes;
+      }
     });
   });
 });

@@ -10,6 +10,14 @@
  * governing permissions and limitations under the License.
  */
 import mime from 'mime';
+import { unified } from 'unified';
+import rehypeParse from 'rehype-parse';
+import {
+  contentSecurityPolicy,
+  getHeaderCSP,
+  checkResponseBodyForMetaBasedCSP,
+} from './csp.js';
+import tohtml from './stringify-response.js';
 
 const CHARSET_RE = /charset=([^()<>@,;:"/[\]?.=\s]*)/i;
 
@@ -32,4 +40,15 @@ export default async function renderCode(state, req, res) {
     }
   }
   res.headers.set('content-type', contentType);
+
+  const cspHeader = getHeaderCSP(res);
+  if (state.type === 'html' && (cspHeader?.includes('nonce') || checkResponseBodyForMetaBasedCSP(res))) {
+    res.document = await unified()
+      .use(rehypeParse)
+      .parse(res.body);
+    res.body = undefined;
+
+    contentSecurityPolicy(res, res.document);
+    await tohtml(state, req, res);
+  }
 }
